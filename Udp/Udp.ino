@@ -8,20 +8,19 @@
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <ESP_EEPROM.h>  // flash protective version of <EEPROM.h>
+#include <WiFiManager.h>
 typedef unsigned char uint8;
-
-#ifndef STASSID
-#define STASSID "FIXME"
-#define STAPSK  "FIXME"
-#endif
 
 unsigned int localPort = 1337;      // local port to listen on
 uint8 rgb[3] = {0xff, 0x6b, 0x55}; // gives nice, slightly warm, white on boot
+					//very warm: {0x93, 0x35, 0x20}
 int active = 1;
 const int red = 14;
 const int grn = 12;
 const int blu = 13;
 
+const uint rgb_addr = 0;
 WiFiUDP Udp;
 
 #define ACK 0x06
@@ -32,12 +31,23 @@ void setup() {
   pinMode(grn, OUTPUT);
   pinMode(blu, OUTPUT);
   Serial.begin(115200);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(STASSID, STAPSK);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
-    delay(500);
+  EEPROM.begin(sizeof rgb);
+
+  uint8 tmp[3];
+  EEPROM.get(rgb_addr,tmp);
+  if (!tmp[0] && !tmp[1] && !tmp[1]) {//XXX: untested
+    EEPROM.put(rgb_addr, rgb);
+    EEPROM.commit();
   }
+  EEPROM.get(rgb_addr,rgb);
+  analogWrite(red, rgb[0]<<2);
+  analogWrite(grn, rgb[1]<<2);
+  analogWrite(blu, rgb[2]<<2);
+
+  WiFiManager wifiManager;
+  wifiManager.setHostname("girst-LEDBerg"); // needs at least wifimanager 2.0.12-beta (tested with 2.0.14-beta)
+  wifiManager.autoConnect("gir.st LEDBerg");
+
   Serial.print("Connected! IP address: ");
   Serial.println(WiFi.localIP());
   Serial.printf("UDP server on port %d\n", localPort);
@@ -87,13 +97,9 @@ void loop() {
       }
       break;
     case 3: // save color to eeprom
-      Udp.write(NAK); //TODO: not implemented
-      break;
-    case 4: // set ssid and wpa2psk; write to non-volatile memory
-      Udp.write(NAK); //TODO: not implemented
-      break;
-    case 5: //set static ip / dhcp 
-      Udp.write(NAK); //TODO: not implemented
+      EEPROM.put(rgb_addr, rgb);
+      EEPROM.commit();
+      Udp.write(ACK);
       break;
     default: //send nak
       Udp.write(NAK);
